@@ -1,10 +1,9 @@
 package pdc;
 
 import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
-import java.io.DataOutputStream;
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 
 /**
@@ -38,20 +37,30 @@ public class Message {
      * Students must implement their own framing (e.g., length-prefixing).
      */
     public byte[] pack() {
-        try {
-            ByteArrayOutputStream buffer = new ByteArrayOutputStream();
-            DataOutputStream out = new DataOutputStream(buffer);
-            writeString(out, magic);
-            out.writeInt(version);
-            writeString(out, messageType);
-            writeString(out, studentId);
-            out.writeLong(timestamp);
-            writeString(out, payload);
-            out.flush();
-            return buffer.toByteArray();
-        } catch (IOException e) {
-            throw new IllegalStateException("Unable to pack message", e);
-        }
+        byte[] magicBytes = safe(magic).getBytes(StandardCharsets.UTF_8);
+        byte[] typeBytes = safe(messageType).getBytes(StandardCharsets.UTF_8);
+        byte[] studentBytes = safe(studentId).getBytes(StandardCharsets.UTF_8);
+        byte[] payloadBytes = safe(payload).getBytes(StandardCharsets.UTF_8);
+
+        int total = Integer.BYTES + magicBytes.length
+                + Integer.BYTES
+                + Integer.BYTES + typeBytes.length
+                + Integer.BYTES + studentBytes.length
+                + Long.BYTES
+                + Integer.BYTES + payloadBytes.length;
+
+        ByteBuffer direct = ByteBuffer.allocateDirect(total);
+        putBytes(direct, magicBytes);
+        direct.putInt(version);
+        putBytes(direct, typeBytes);
+        putBytes(direct, studentBytes);
+        direct.putLong(timestamp);
+        putBytes(direct, payloadBytes);
+
+        byte[] out = new byte[total];
+        direct.flip();
+        direct.get(out);
+        return out;
     }
 
     /**
@@ -117,10 +126,9 @@ public class Message {
         }
     }
 
-    private static void writeString(DataOutputStream out, String value) throws IOException {
-        byte[] data = safe(value).getBytes(StandardCharsets.UTF_8);
-        out.writeInt(data.length);
-        out.write(data);
+    private static void putBytes(ByteBuffer buffer, byte[] data) {
+        buffer.putInt(data.length);
+        buffer.put(data);
     }
 
     private static String readString(DataInputStream in) throws IOException {
